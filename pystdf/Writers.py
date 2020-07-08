@@ -98,3 +98,57 @@ class XmlWriter:
     def after_complete(self, dataSource):
         self.stream.write('</Stdf>\n')
         self.stream.flush()
+
+class CsvWriter:
+    extra_entities = {'\0': ''}
+
+    @staticmethod
+    def csv_format(rectype, field_index, value):
+        field_type = rectype.fieldStdfTypes[field_index]
+        if value is None:
+            return ""
+        elif rectype is V4.gdr:
+            return ';'.join([str(v) for v in value])
+        elif field_type[0] == 'k': # An Array of some other type
+            return ','.join([format_by_type(v, field_type[2:]) for v in value])
+        elif rectype is V4.mir or rectype is V4.mrr:
+            field_name = rectype.fieldNames[field_index]
+            if field_name.endswith('_T'): # A Date-Time in an MIR/MRR
+                return strftime('%H:%M:%ST%d-%b-%Y', localtime(value))
+            else:
+                return str(value)
+        else:
+            return str(value)
+
+    def __init__(self, stream=sys.stdout):
+        self.stream = stream
+        self.CURR_SQ = None
+
+    def before_begin(self, dataSource):
+        self.stream.write('sequence_no,test_number,head_num,site_number,test_text,result,pass_or_fail\n')
+
+    def after_send(self, dataSource, data):
+        # self.stream.write('<%s' % (data[0].__class__.__name__))
+        # for i, val in enumerate(data[1]):
+        
+        if data[0].__class__.__name__.lower() == 'bps' and 'SEQ_NAME' in data[0].fieldNames:
+            fmtval = self.csv_format(data[0],data[0].fieldNames.index("SEQ_NAME"), data[1][data[0].fieldNames.index("SEQ_NAME")])
+            self.CURR_SQ = quoteattr(fmtval, self.extra_entities)
+        elif data[0].__class__.__name__.lower() == 'ptr':
+            result = self.csv_format(data[0],data[0].fieldNames.index("RESULT"), data[1][data[0].fieldNames.index("RESULT")])
+            testText = self.csv_format(data[0],data[0].fieldNames.index("TEST_TXT"), data[1][data[0].fieldNames.index("TEST_TXT")])
+            testNum = self.csv_format(data[0],data[0].fieldNames.index("TEST_NUM"), data[1][data[0].fieldNames.index("TEST_NUM")])
+            siteNum = self.csv_format(data[0],data[0].fieldNames.index("SITE_NUM"), data[1][data[0].fieldNames.index("SITE_NUM")])
+            headNum = self.csv_format(data[0],data[0].fieldNames.index("HEAD_NUM"), data[1][data[0].fieldNames.index("HEAD_NUM")])
+            testFlag = self.csv_format(data[0],data[0].fieldNames.index("TEST_FLG"), data[1][data[0].fieldNames.index("TEST_FLG")])
+            if int(testFlag) > 0:
+                testFlag = 0
+            else:
+                testFlag = 1
+            self.stream.write(f'{self.CURR_SQ},{testNum},{headNum},{siteNum},"{testText}",{result},{testFlag}\n')
+            # self.stream.write(' %s=%s' % (data[0].fieldNames[i], quoteattr(fmtval, self.extra_entities)))
+        # self.stream.write('/>\n')
+
+    def after_complete(self, dataSource):
+        # self.stream.write('</Stdf>\n')
+        self.stream.flush()
